@@ -100,7 +100,11 @@ def main():
 
     df = pd.DataFrame(records)
     
-    print("Connecting to Supabase PostgreSQL...")
+    print("\nSample parsed record (first city):")
+    for key, val in df.iloc[0].to_dict().items():
+        print(f"  {key}: {val}")
+    
+    print("\nConnecting to Supabase PostgreSQL...")
     engine = create_engine(SUPABASE_DB_URL)
     
     metadata = MetaData()
