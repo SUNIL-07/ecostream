@@ -17,7 +17,7 @@ except:
 
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 
-file_path = 'artefacts/10yr_historical_data.csv'
+file_path = 'artefacts/10yr_hourly_timeline.csv'
 if not os.path.exists(file_path):
     raise FileNotFoundError(f"Missing: {file_path}")
 
@@ -36,7 +36,7 @@ metadata = MetaData()
 table = Table('daily_aqi_weather', metadata, autoload_with=engine)
 
 records = df.to_dict(orient='records')
-chunk_size = 2000
+chunk_size = 10000 # Massively upscaled optimized SQL RAM blocks for parsing 1.5M pure hourly vectors!
 
 with engine.begin() as conn:
     for i in range(0, len(records), chunk_size):
