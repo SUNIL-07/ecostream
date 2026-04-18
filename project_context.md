@@ -39,7 +39,15 @@
 ### Phase B (Empirical Analytics & Deep Extraction)
 - [x] Extracted a sweeping 10-year historical dataset structurally from Open-Meteo systems across all 20 specific locations automatically.
 - [x] Designed Python-mapped alignment bridges formatting attributes precisely against our 18-column structural design natively.
-- [x] Upserted sprawling 18,700-row timeline directly into Supabase Cloud databases safely.
+- [x] Upserted uniquely spanning 75,180 timeline arrays directly into Supabase Cloud databases safely.
+
+#### Technical Resolutions & Code Changes (Phase B)
+During Phase B Data Engineering, several complex extraction barriers were explicitly resolved within the repository codebase:
+- **API Rate Limiting Verification:** The massive 10-year JSON pulls initially triggered `HTTP 429 Too Many Requests` on Open-Meteo's Free tier, silencing the last 15 secondary cities natively. **Resolution:** We built a dedicated secondary extractor (`scripts/fetch_missing_15_cities.py`) intentionally embedding `time.sleep(12)` autonomous wait-times to cleanly bypass backend rate limits securely.
+- **Null Target Formatting:** Raw missing dates dynamically loaded into Pandas as floating `np.nan` objects, which aggressively throws TypeErrors or inserts corrupted strings into Postgres. **Resolution:** Formatted a rigorous string enforcement code `df = df.where(pd.notnull(df), None)` internally applied throughout `fetch_data.py` and `upload_historical.py`. This forces all disconnected signals to compile perfectly as strictly native PostgreSQL `NULL` constraints.
+- **Batched DB Collision Bypassing:** Injecting 75,000+ history matrices natively invites heavy API timeout failures and massive primary-key overlap crashes natively. **Resolution:** Engineered `upload_historical.py` to route strictly through explicit SQLAlchemy PostgreSQL connections natively iterating inside `chunk_size = 2000` context blocks. Appended an explicit `.on_conflict_do_nothing(index_elements=['city', 'timestamp'])` architecture natively preventing massive duplicate overwrites or UUID failures seamlessly.
+- **Terminal Parsing Overloads:** Powershell pipelines crashed registering specific UI checkmarks (`[✓]`) natively invoking `UnicodeEncodeError` exceptions upon concluding the upload matrices. **Resolution:** Manually altered all Python execution completion codes into standard ASCII constraints (`[DONE]`) universally resolving execution workflow warnings perfectly.
+
 
 ### Phase A (Engineering)
 - [x] Set up Supabase PostgreSQL project and database schema.

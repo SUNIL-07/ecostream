@@ -31,8 +31,30 @@ Handling 20 cities with multidimensional time-series data requires robust models
 6.  **Temporal Fusion Transformer (TFT):** Complex deep learning for multi-horizon forecasting.
 
 **Selection:** 
-We will train the top 3 best-suited models that integrate well with Explainable AI: **XGBoost, LightGBM, and Random Forest**. These tree-based algorithms integrate natively with **TreeSHAP**, allowing us to generate highly understandable charts (e.g., "High humidity increased the AQI prediction by 20 points today"). 
-*Note on the 20 cities:* We will use a global modeling approach where `city_name` (or coordinates) is encoded as a categorical feature, allowing a single robust model to learn from cross-city patterns. 
+We will train the top 3 best-suited models that integrate well with Explainable AI: **XGBoost, LightGBM, and Random Forest**. These tree-based algorithms integrate natively with **TreeSHAP**, allowing us to generate highly understandable charts (e.g., "High humidity increased the AQI prediction by 20 points today").
+*Note on the 20 cities:* We will use a global modeling approach where `city_name` (or coordinates) is encoded as a categorical feature, allowing a single robust model to learn from cross-city patterns.
+
+**City List:**
+1.  **New Delhi**: (28.6139, 77.2090)
+2.  **Kolkata**: (22.5726, 88.3639)
+3.  **Mumbai**: (19.0760, 72.8777)
+4.  **Bengaluru**: (12.9716, 77.5946)
+5.  **Chennai**: (13.0827, 80.2707)
+6.  **Hyderabad**: (17.3850, 78.4867)
+7.  **Ahmedabad**: (23.0225, 72.5714)
+8.  **Surat**: (21.1702, 72.8311)
+9.  **Pune**: (18.5204, 73.8567)
+10. **Lucknow**: (26.8467, 80.9462)
+11. **Kanpur**: (26.4499, 80.3319)
+12. **Jaipur**: (26.9124, 75.7873)
+13. **Indore**: (22.7196, 75.8577)
+14. **Patna**: (25.5941, 85.1376)
+15. **Nagpur**: (21.1458, 79.0882)
+16. **Thiruvananthapuram**: (8.5241, 76.9366)
+17. **Bhopal**: (23.2599, 77.4126)
+18. **Chandigarh**: (30.7333, 76.7794)
+19. **Ludhiana**: (30.9010, 75.8573)
+20. **Visakhapatnam**: (17.6868, 83.2185)
 
 ## 5. Phased Methodology
 *   **Phase A: Engineering (The Foundation):** Setup Supabase. Create the hourly Python ingestion script. Configure GitHub Actions to run the script and push data to Supabase 24/7.

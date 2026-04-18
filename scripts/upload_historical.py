@@ -45,4 +45,4 @@ with engine.begin() as conn:
         conn.execute(stmt)
         print(f"  -> Bulk upserted rows {i} to {i + len(chunk)}")
 
-print("\n[✓] Historical Database Injection Fully Completed.")
+print("\n[DONE] Historical Database Injection Fully Completed.")

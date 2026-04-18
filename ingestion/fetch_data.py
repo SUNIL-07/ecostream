@@ -99,6 +99,8 @@ def main():
         records.append(record)
 
     df = pd.DataFrame(records)
+    # Enforce strict Python None instead of float('NaN') to map natively to PostgreSQL NULL
+    df = df.where(pd.notnull(df), None)
     
     print("\nSample parsed record (first city):")
     for key, val in df.iloc[0].to_dict().items():
