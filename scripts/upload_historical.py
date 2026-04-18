@@ -23,6 +23,9 @@ if not os.path.exists(file_path):
 
 df = pd.read_csv(file_path)
 
+# Critical ML Filter: Eradicate entries entirely missing AQI natively before DB injection
+df = df.dropna(subset=['aqi'])
+
 # Pandas nan -> None for postgresql inserts natively
 df = df.where(pd.notnull(df), None)
 
