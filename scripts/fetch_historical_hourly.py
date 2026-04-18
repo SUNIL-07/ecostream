@@ -29,7 +29,7 @@ def map_weather_code(code):
 
 def fetch_data(city, lat, lon):
     start = "2016-01-01"
-    end = "2026-04-16"
+    end = datetime.now().strftime("%Y-%m-%d")
     print(f"  -> Pulling Strict Hourly AQI...")
     url_aqi = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&start_date={start}&end_date={end}&hourly=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide&timezone=GMT"
     
