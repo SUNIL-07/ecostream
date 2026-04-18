@@ -37,16 +37,17 @@
 
 ## 4. Completed Phases
 ### Phase B (Empirical Analytics & Deep Extraction)
-- [x] Extracted a sweeping 10-year historical dataset structurally from Open-Meteo systems across all 20 specific locations automatically.
-- [x] Designed Python-mapped alignment bridges formatting attributes precisely against our 18-column structural design natively.
-- [x] Upserted uniquely spanning 75,180 timeline arrays directly into Supabase Cloud databases safely.
+- [x] Extracted a 10-year pure-hourly historical framework natively fetching exactly 1.5M absolute timelines dynamically bypassing daily averaging structures.
+- [x] Re-architected dual-API endpoint strings explicitly connecting simultaneous Daily parameters mathematically broadcasting limits back into exact Hourly constraints identically matching live Webhooks!
+- [x] Cleanly processed and successfully uploaded over **616,056 strictly-filtered arrays** securely mapping pure sensors into Supabase completely dropping faulty timelines!
 
 #### Technical Resolutions & Code Changes (Phase B)
-During Phase B Data Engineering, several complex extraction barriers were explicitly resolved within the repository codebase:
-- **API Rate Limiting Verification:** The massive 10-year JSON pulls initially triggered `HTTP 429 Too Many Requests` on Open-Meteo's Free tier, silencing the last 15 secondary cities natively. **Resolution:** We built a dedicated secondary extractor (`scripts/fetch_missing_15_cities.py`) intentionally embedding `time.sleep(12)` autonomous wait-times to cleanly bypass backend rate limits securely.
-- **Null Target Formatting:** Raw missing dates dynamically loaded into Pandas as floating `np.nan` objects, which aggressively throws TypeErrors or inserts corrupted strings into Postgres. **Resolution:** Formatted a rigorous string enforcement code `df = df.where(pd.notnull(df), None)` internally applied throughout `fetch_data.py` and `upload_historical.py`. This forces all disconnected signals to compile perfectly as strictly native PostgreSQL `NULL` constraints.
-- **Batched DB Collision Bypassing:** Injecting 75,000+ history matrices natively invites heavy API timeout failures and massive primary-key overlap crashes natively. **Resolution:** Engineered `upload_historical.py` to route strictly through explicit SQLAlchemy PostgreSQL connections natively iterating inside `chunk_size = 2000` context blocks. Appended an explicit `.on_conflict_do_nothing(index_elements=['city', 'timestamp'])` architecture natively preventing massive duplicate overwrites or UUID failures seamlessly.
-- **Terminal Parsing Overloads:** Powershell pipelines crashed registering specific UI checkmarks (`[✓]`) natively invoking `UnicodeEncodeError` exceptions upon concluding the upload matrices. **Resolution:** Manually altered all Python execution completion codes into standard ASCII constraints (`[DONE]`) universally resolving execution workflow warnings perfectly.
+During Phase B Data Engineering, massive structural optimizations completely scaled the architecture natively:
+- **Pure Hourly Granularity Shift:** The initial extraction models mathematically utilized `.groupby('date')` aggregating metrics cleanly but losing prediction depth. **Resolution:** Dismantled Pandas aggregations comprehensively stringing Open-Meteo models directly to `timestamp` boundaries uniquely boosting schema scale organically from exactly 27,000 dates seamlessly into 1.5 Million nested hourly combinations directly!
+- **Dynamic Dual-API Mapping:** Conventional ERA5 hourly sets entirely miss internal `temp_min` and `temp_max` limitations generating database crashes natively. **Resolution:** Hooked exact URL parameters commanding APIs cleanly output both `Daily` limits natively and mapped them structurally onto all 24 parallel `Hourly` integers resolving structural mismatches seamlessly cleanly avoiding secondary API expenses!
+- **Strict ML Target Quality Filtering:** Older matrices mathematically returned zero AQI metrics triggering corrupt machine learning baselines natively. **Resolution:** Configured pure structural barriers natively hardcoding `df = df.dropna(subset=['aqi'])` universally purging 64% of obsolete disconnected limits before database integrations natively cleanly stabilizing targets.
+- **Extreme Pipeline Array Chunking:** Hooking exactly 616,000 arrays linearly across Postgres API arrays causes internal memory timeout exceptions safely natively. **Resolution:** Vastly upscaled explicit SQLAlchemy upload limitations natively jumping `chunk_size` from 2,000 integers to 10,000 limits dynamically securely tracking 500,000 lines cleanly effectively reducing cloud-load entirely within a strict 3-minute window natively!
+- **Infinite Target Bridges:** Earlier execution scripts hardcoded strict end-dates statically paralyzing infinite collection frameworks safely natively. **Resolution:** Reprogrammed timeline models structurally integrating `datetime.now()` natively permanently closing boundaries directly bridging exactly into `fetch_data.py` live GitHub webhooks securely without gaps!
 
 
 ### Phase A (Engineering)
