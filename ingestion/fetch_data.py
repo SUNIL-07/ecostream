@@ -88,6 +88,12 @@ def main():
     print(f"Starting pipeline for {len(CITIES)} cities...")
     for city in CITIES:
         waqi_data = fetch_waqi_data(city)
+        
+        # Critical strict check: Skip entry completely if primary AQI feature is offline
+        if waqi_data.get('aqi') is None:
+            print(f"[{city}] Skipped: Null AQI encountered. Maintaining database schema health.")
+            continue
+            
         weather_data = fetch_weather_data(city)
         
         record = {

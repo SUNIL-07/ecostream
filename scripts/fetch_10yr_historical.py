@@ -116,6 +116,10 @@ def fetch_data(city, lat, lon):
             'wind_speed', 'wind_deg', 'clouds', 'weather_condition'
         ]]
         
+        # Critical ML Enforcement: Drop any date explicitly missing the primary AQI classification
+        final_df = final_df.dropna(subset=['aqi'])
+        if final_df.empty: return pd.DataFrame()
+        
         return final_df
     return pd.DataFrame()
 
