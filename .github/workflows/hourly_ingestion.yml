@@ -2,8 +2,8 @@ name: Hourly Data Ingestion
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs at minute 0 of every hour
-  workflow_dispatch:      # Allows manual trigger
+    - cron: '0 * * * *'  # Runs exactly 1-time per hour aligning strictly alongside Live API targets natively
+  workflow_dispatch:      # Grants absolute Manual Trigger functionality seamlessly
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -16,19 +16,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       
-    - name: Set up Python
+    - name: Set up Python Engine structurally
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
         
-    - name: Install dependencies
+    - name: Scale Dependencies safely
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Run Ingestion Script
+    - name: Launch Real-Time Supabase Synchronization Protocol
       env:
-        WAQI_API_KEY: ${{ secrets.WAQI_API_KEY }}
-        OWM_API_KEY: ${{ secrets.OWM_API_KEY }}
         SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       run: python ingestion/fetch_data.py

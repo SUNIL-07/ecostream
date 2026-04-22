@@ -92,8 +92,8 @@ def fetch_data(city, lat, lon):
         'wind_speed', 'wind_deg', 'clouds', 'weather_condition'
     ]]
     
-    # Critical Filter: Explicitly drop structural rows containing pure API blanks for ML Targets
-    final_df = final_df.dropna(subset=['aqi'])
+    # Critical ML Target Filter: Explicitly drop absolutely any row possessing internal null or NaN across AQI or any Weather parameters
+    final_df = final_df.dropna()
     if final_df.empty: return pd.DataFrame()
     
     # Round gracefully for massive memory footprint lowering natively

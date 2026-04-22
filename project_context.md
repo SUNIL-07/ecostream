@@ -6,7 +6,7 @@
 **Objective:** Build an automated cloud-based data ingestion pipeline, train ML models for predicting a 24-hour window of Air Quality Index (AQI), explain predictions with XAI (SHAP), and visualize everything in an interactive Streamlit dashboard. Focused on 20 major cities across India.
 
 **Tech Stack:**
-- **Data APIs:** WAQI (World Air Quality Index), OpenWeatherMap
+- **Data APIs:** Open-Meteo Unified Suite (Air Quality + Weather/ERA5 Native Forecasts)
 - **Database:** Supabase (Cloud PostgreSQL)
 - **Ingestion:** GitHub Actions (Running Python scripts hourly)
 - **Data processing & EDA:** pandas, numpy, sqlalchemy, plotly, seaborn
@@ -18,7 +18,7 @@
 ## 2. Progress So Far
 - **Project Initiation:** Finalized project scope and problem statement.
 - **Goal Setting:** Defined S.M.A.R.T objectives and a structured Phased Methodology.
-- **Architecture Finalization:** Clarified technical infrastructure choices (Supabase for DB, GitHub Actions for orchestration, WAQI/OpenWeatherMap for data).
+- **Architecture Finalization:** Clarified technical infrastructure choices (Supabase for DB, GitHub Actions for orchestration, Open-Meteo for deeply unified 1:1 API mappings).
 - **Documentation:** Created the core `Project_Document.md` detailing the objectives, stack, and modeling strategy.
 - **Phase A Complete:** Successfully built and deployed an 18-attribute Super-Schema via a Python auto-ingestion pipeline securely to GitHub Actions!
 
@@ -52,9 +52,9 @@ During Phase B Data Engineering, massive structural optimizations completely sca
 
 ### Phase A (Engineering)
 - [x] Set up Supabase PostgreSQL project and database schema.
-- [x] Develop the Python ingestion script to fetch data from WAQI API and OpenWeatherMap API for the 20 targeted cities.
-- [x] Establish connection between Python ingestion script and Supabase to write data.
-- [x] Configure GitHub Actions workflow to run the ingestion script automatically every hour.
+- [x] Streamlined the Python extraction framework internally stringing 100% of live logic specifically to Open-Meteo Cloud matching pure structural historical identical parity natively securely!
+- [x] Establish strict `dropna` validation barriers natively completely shielding Supabase arrays from Null API blocks seamlessly!
+- [x] Configured optimized GitHub Actions workflows securely stringing purely standalone Python bridges successfully across Supabase.
 
 ---
 

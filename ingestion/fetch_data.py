@@ -4,149 +4,116 @@ import pandas as pd
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, Table, MetaData
 from sqlalchemy.dialects.postgresql import insert
-import urllib.parse
-from dotenv import load_dotenv
+import warnings
+warnings.filterwarnings('ignore')
 
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    load_dotenv('../.env')
+except:
+    pass
 
-# Environment variables
-WAQI_API_KEY = os.getenv("WAQI_API_KEY")
-OWM_API_KEY = os.getenv("OWM_API_KEY")
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
+if not SUPABASE_DB_URL:
+    raise ValueError("Missing SUPABASE_DB_URL structurally!")
 
-CITIES = [
-    "New Delhi", "Kolkata", "Mumbai", "Bengaluru", "Chennai", 
-    "Hyderabad", "Ahmedabad", "Surat", "Pune", "Lucknow", 
-    "Kanpur", "Jaipur", "Indore", "Patna", "Nagpur", 
-    "Thiruvananthapuram", "Bhopal", "Chandigarh", "Ludhiana", "Visakhapatnam"
-]
+CITIES = {
+    "New Delhi": (28.6139, 77.2090), "Kolkata": (22.5726, 88.3639), "Mumbai": (19.0760, 72.8777),
+    "Bengaluru": (12.9716, 77.5946), "Chennai": (13.0827, 80.2707), "Hyderabad": (17.3850, 78.4867),
+    "Ahmedabad": (23.0225, 72.5714), "Surat": (21.1702, 72.8311), "Pune": (18.5204, 73.8567),
+    "Lucknow": (26.8467, 80.9462), "Kanpur": (26.4499, 80.3319), "Jaipur": (26.9124, 75.7873),
+    "Indore": (22.7196, 75.8577), "Patna": (25.5941, 85.1376), "Nagpur": (21.1458, 79.0882),
+    "Thiruvananthapuram": (8.5241, 76.9366), "Bhopal": (23.2599, 77.4126), "Chandigarh": (30.7333, 76.7794),
+    "Ludhiana": (30.9010, 75.8573), "Visakhapatnam": (17.6868, 83.2185)
+}
 
-def fetch_waqi_data(city):
-    """Fetch all available AQI metrics from WAQI."""
-    url = f"https://api.waqi.info/feed/{urllib.parse.quote(city)}/?token={WAQI_API_KEY}"
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('status') == 'ok':
-                aqi = data['data'].get('aqi')
-                iaqi = data['data'].get('iaqi', {})
-                return {
-                    'aqi': aqi if aqi != '-' else None,
-                    'pm25': iaqi.get('pm25', {}).get('v'),
-                    'pm10': iaqi.get('pm10', {}).get('v'),
-                    'o3': iaqi.get('o3', {}).get('v'),
-                    'no2': iaqi.get('no2', {}).get('v'),
-                    'so2': iaqi.get('so2', {}).get('v'),
-                    'co': iaqi.get('co', {}).get('v')
-                }
-    except Exception as e:
-        print(f"Error fetching WAQI for {city}: {e}")
-        
-    return {'aqi': None, 'pm25': None, 'pm10': None, 'o3': None, 'no2': None, 'so2': None, 'co': None}
+def map_weather_code(code):
+    if pd.isna(code) or code is None: return 'Unknown'
+    code = int(code)
+    if code == 0: return 'Clear'
+    elif 1 <= code <= 3: return 'Clouds'
+    elif 45 <= code <= 48: return 'Haze'
+    elif 51 <= code <= 67: return 'Rain'
+    elif 71 <= code <= 77: return 'Snow'
+    elif code >= 80: return 'Rain'
+    return 'Unknown'
 
-def fetch_weather_data(city):
-    """Fetch granular Weather metrics from OpenWeatherMap."""
-    url = f"https://api.openweathermap.org/data/2.5/weather?q={urllib.parse.quote(city)},IN&appid={OWM_API_KEY}&units=metric"
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()
-            main = data.get('main', {})
-            wind = data.get('wind', {})
-            clouds = data.get('clouds', {}).get('all')
-            weather = data.get('weather', [{}])[0].get('main')
-            return {
-                'temperature': main.get('temp'),
-                'temp_min': main.get('temp_min'),
-                'temp_max': main.get('temp_max'),
-                'feels_like': main.get('feels_like'),
-                'humidity': main.get('humidity'),
-                'pressure': main.get('pressure'),
-                'wind_speed': wind.get('speed'),
-                'wind_deg': wind.get('deg'),
-                'clouds': clouds,
-                'weather_condition': weather
-            }
-    except Exception as e:
-        print(f"Error fetching OWM for {city}: {e}")
-        
-    return {
-        'temperature': None, 'temp_min': None, 'temp_max': None, 'feels_like': None, 
-        'humidity': None, 'pressure': None, 'wind_speed': None, 'wind_deg': None, 
-        'clouds': None, 'weather_condition': None
-    }
-
-def main():
-    if not all([WAQI_API_KEY, OWM_API_KEY, SUPABASE_DB_URL]):
-        print("Missing API keys or Database URL. Exiting...")
-        return
-
+def fetch_live_data():
     records = []
-    timestamp = datetime.now(timezone.utc)
     
-    print(f"Starting pipeline for {len(CITIES)} cities...")
-    for city in CITIES:
-        waqi_data = fetch_waqi_data(city)
+    for city, coords in CITIES.items():
+        lat, lon = coords
         
-        # Critical strict check: Skip entry completely if primary AQI feature is offline
-        if waqi_data.get('aqi') is None:
-            print(f"[{city}] Skipped: Null AQI encountered. Maintaining database schema health.")
+        # 1. Fetch Exact Open-Meteo Air Quality Model (Replacing WAQI identically)
+        url_aqi = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide"
+        res_aqi = requests.get(url_aqi)
+        
+        # 2. Fetch Exact Open-Meteo Weather Model explicitly capturing daily boundary identical to Historical Architecture natively
+        url_w = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,surface_pressure,wind_speed_10m,wind_direction_10m,cloud_cover,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=GMT"
+        res_w = requests.get(url_w)
+
+        if res_aqi.status_code != 200 or res_w.status_code != 200:
+            print(f"Skipped {city}: Core API Error [{res_aqi.status_code} | {res_w.status_code}]")
             continue
             
-        weather_data = fetch_weather_data(city)
+        cur_aqi = res_aqi.json().get('current', {})
+        cur_w = res_w.json().get('current', {})
+        daily_w = res_w.json().get('daily', {})
         
+        if not cur_aqi or not cur_w or not daily_w:
+            print(f"Skipped {city}: Blank JSON payload natively")
+            continue
+            
+        # Structure variables into the identical matching format spanning the historical script universally natively!
         record = {
             'city': city,
-            'timestamp': timestamp,
-            **waqi_data,
-            **weather_data
+            'timestamp': cur_aqi.get('time') + "+00:00", # Exact GMT constraint alignment universally
+            'aqi': cur_aqi.get('us_aqi'),
+            'pm25': cur_aqi.get('pm2_5'),
+            'pm10': cur_aqi.get('pm10'),
+            'o3': cur_aqi.get('ozone'),
+            'no2': cur_aqi.get('nitrogen_dioxide'),
+            'so2': cur_aqi.get('sulphur_dioxide'),
+            'co': cur_aqi.get('carbon_monoxide'),
+            'temperature': cur_w.get('temperature_2m'),
+            'temp_min': daily_w.get('temperature_2m_min', [None])[0] if daily_w.get('temperature_2m_min') else None,
+            'temp_max': daily_w.get('temperature_2m_max', [None])[0] if daily_w.get('temperature_2m_max') else None,
+            'feels_like': cur_w.get('apparent_temperature'),
+            'humidity': cur_w.get('relative_humidity_2m'),
+            'pressure': cur_w.get('surface_pressure'),
+            'wind_speed': cur_w.get('wind_speed_10m'),
+            'wind_deg': cur_w.get('wind_direction_10m'),
+            'clouds': cur_w.get('cloud_cover'),
+            'weather_condition': map_weather_code(cur_w.get('weather_code'))
         }
+        
         records.append(record)
 
     df = pd.DataFrame(records)
-    # Enforce strict Python None instead of float('NaN') to map natively to PostgreSQL NULL
+    
+    # 3. Aggressive Strict DropNA constraint identically applied across real-time feeds securely!
+    if df.empty: return pd.DataFrame()
+    df = df.dropna()
+    
+    # Cast cleanly into pure python targets for PostgreSQL insertion safely
     df = df.where(pd.notnull(df), None)
     
-    print("\nSample parsed record (first city):")
-    for key, val in df.iloc[0].to_dict().items():
-        print(f"  {key}: {val}")
-    
-    print("\nConnecting to Supabase PostgreSQL...")
-    engine = create_engine(SUPABASE_DB_URL)
-    
-    metadata = MetaData()
-    daily_aqi_weather_table = Table('daily_aqi_weather', metadata, autoload_with=engine)
-    
-    with engine.begin() as conn:
-        for idx, row in df.iterrows():
-            stmt = insert(daily_aqi_weather_table).values(
-                city=row['city'],
-                timestamp=row['timestamp'],
-                aqi=row['aqi'],
-                pm25=row['pm25'],
-                pm10=row['pm10'],
-                o3=row['o3'],
-                no2=row['no2'],
-                so2=row['so2'],
-                co=row['co'],
-                temperature=row['temperature'],
-                temp_min=row['temp_min'],
-                temp_max=row['temp_max'],
-                feels_like=row['feels_like'],
-                humidity=row['humidity'],
-                pressure=row['pressure'],
-                wind_speed=row['wind_speed'],
-                wind_deg=row['wind_deg'],
-                clouds=row['clouds'],
-                weather_condition=row['weather_condition']
-            )
-            stmt = stmt.on_conflict_do_nothing(
-                index_elements=['city', 'timestamp']
-            )
-            conn.execute(stmt)
-            
-    print(f"Successfully ingested {len(df)} records into the super-schema at {timestamp}.")
+    return df
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    print("Executing automated live architecture collection cleanly...")
+    df = fetch_live_data()
+    
+    print(f"Successfully processed exactly {len(df)} 100%-pure parameters universally!")
+    if len(df) > 0:
+        engine = create_engine(SUPABASE_DB_URL)
+        metadata = MetaData()
+        table = Table('daily_aqi_weather', metadata, autoload_with=engine)
+        
+        records = df.to_dict(orient='records')
+        with engine.begin() as conn:
+            stmt = insert(table).values(records)
+            stmt = stmt.on_conflict_do_nothing(index_elements=['city', 'timestamp'])
+            conn.execute(stmt)
+            print("[SYNC REACHED] Successfully bridged Native Arrays into Supabase Cloud!")
