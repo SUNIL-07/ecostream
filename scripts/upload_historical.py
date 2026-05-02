@@ -1,51 +1,81 @@
 import os
+import sys
 import pandas as pd
-from sqlalchemy import create_engine, Table, MetaData
-from sqlalchemy.dialects.postgresql import insert
-from dotenv import load_dotenv
+import requests
+import json
+import time
+from pathlib import Path
 
-# Load env safely
-try:
-    load_dotenv('../.env')
-except:
-    pass
-    
-try:
-    load_dotenv('.env')
-except:
-    pass
+# Force unbuffered stdout
+sys.stdout.reconfigure(line_buffering=True)
 
-SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
+# ─── Configuration ──────────────────────────────────────────
+# Hardcoding keys for now as they were fetched via Management API due to local network issues
+SUPABASE_URL = "https://trfetbxovhmbmwgbqdqm.supabase.co"
+SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRyZmV0YnhvdmhtYm13Z2JxZHFtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjM1NjY3MCwiZXhwIjoyMDkxOTMyNjcwfQ.XgrP4c5hniQJbSK87xpEru820e24K9gLebA2bBt-Gb8"
+TABLE_NAME = "daily_aqi_weather"
 
-file_path = 'artefacts/10yr_hourly_timeline.csv'
+REST_URL = f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}?on_conflict=city,timestamp"
+
+# ─── Load CSV ────────────────────────────────────────────────
+file_path = os.path.join(os.path.dirname(__file__), '..', 'artefacts', '10yr_hourly_timeline.csv')
+file_path = os.path.normpath(file_path)
+
 if not os.path.exists(file_path):
-    raise FileNotFoundError(f"Missing: {file_path}")
+    file_path = os.path.join('artefacts', '10yr_hourly_timeline.csv')
 
+if not os.path.exists(file_path):
+    print(f"ERROR: CSV file not found at: {file_path}")
+    sys.exit(1)
+
+print(f"Reading CSV from: {file_path}")
 df = pd.read_csv(file_path)
+print(f"  Total rows loaded: {len(df)}")
 
-# Critical ML Filter: Eradicate entries entirely missing AQI natively before DB injection
-df = df.dropna(subset=['aqi'])
+# ─── Data Preparation ───────────────────────────────────────
+df = df.dropna()
+# Ensure timestamp is ISO format
+df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True).dt.strftime('%Y-%m-%dT%H:%M:%S%z')
 
-# Pandas nan -> None for postgresql inserts natively
+# Convert NaN to None (null) for JSON
 df = df.where(pd.notnull(df), None)
 
-print(f"Starting bulk upload of {len(df)} records into Supabase...")
-
-engine = create_engine(SUPABASE_DB_URL)
-metadata = MetaData()
-table = Table('daily_aqi_weather', metadata, autoload_with=engine)
-
 records = df.to_dict(orient='records')
-chunk_size = 10000 # Massively upscaled optimized SQL RAM blocks for parsing 1.5M pure hourly vectors!
 
-with engine.begin() as conn:
-    for i in range(0, len(records), chunk_size):
-        chunk = records[i : i + chunk_size]
-        stmt = insert(table).values(chunk)
-        # Bypassing the primary key uuid since default uuid_generate() kicks in automatically
-        # Safely ignore any duplicate dates using constraints
-        stmt = stmt.on_conflict_do_nothing(index_elements=['city', 'timestamp'])
-        conn.execute(stmt)
-        print(f"  -> Bulk upserted rows {i} to {i + len(chunk)}")
+# ─── REST Upload ─────────────────────────────────────────────
+headers = {
+    "apikey": SUPABASE_SERVICE_KEY,
+    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "resolution=merge-duplicates" # UPSERT logic
+}
 
-print("\n[DONE] Historical Database Injection Fully Completed.")
+chunk_size = 1000 # Smaller chunks for REST API reliability
+total_records = len(records)
+print(f"\nStarting REST upload of {total_records} records to Supabase...")
+
+success_count = 0
+fail_count = 0
+
+for i in range(0, total_records, chunk_size):
+    chunk = records[i:i + chunk_size]
+    try:
+        response = requests.post(REST_URL, headers=headers, data=json.dumps(chunk), timeout=60)
+        if response.status_code in [200, 201, 204]:
+            success_count += len(chunk)
+            print(f"  -> Uploaded rows {i} to {i + len(chunk)} (Status: {response.status_code})")
+        else:
+            print(f"  -> FAILED rows {i} to {i + len(chunk)}: {response.status_code} - {response.text[:200]}")
+            fail_count += len(chunk)
+    except Exception as e:
+        print(f"  -> EXCEPTION on rows {i} to {i + len(chunk)}: {e}")
+        fail_count += len(chunk)
+    
+    # Small sleep to be nice to the API
+    time.sleep(0.5)
+
+print(f"\n{'='*60}")
+print(f"UPLOAD SUMMARY")
+print(f"  Successfully uploaded: {success_count}")
+print(f"  Failed:                {fail_count}")
+print(f"{'='*60}")
