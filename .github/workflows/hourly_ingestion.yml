@@ -29,4 +29,5 @@ jobs:
     - name: Launch Real-Time Supabase Synchronization Protocol
       env:
         SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       run: python ingestion/fetch_data.py
