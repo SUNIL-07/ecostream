@@ -11,13 +11,7 @@ sys.stdout.reconfigure(line_buffering=True)
 pd.options.mode.chained_assignment = None
 
 CITIES = {
-    "New Delhi": (28.6139, 77.2090), "Kolkata": (22.5726, 88.3639), "Mumbai": (19.0760, 72.8777),
-    "Bengaluru": (12.9716, 77.5946), "Chennai": (13.0827, 80.2707), "Hyderabad": (17.3850, 78.4867),
-    "Ahmedabad": (23.0225, 72.5714), "Surat": (21.1702, 72.8311), "Pune": (18.5204, 73.8567),
-    "Lucknow": (26.8467, 80.9462), "Kanpur": (26.4499, 80.3319), "Jaipur": (26.9124, 75.7873),
-    "Indore": (22.7196, 75.8577), "Patna": (25.5941, 85.1376), "Nagpur": (21.1458, 79.0882),
-    "Thiruvananthapuram": (8.5241, 76.9366), "Bhopal": (23.2599, 77.4126), "Chandigarh": (30.7333, 76.7794),
-    "Ludhiana": (30.9010, 75.8573), "Visakhapatnam": (17.6868, 83.2185)
+    "New Delhi": (28.6139, 77.2090)
 }
 
 REQUEST_TIMEOUT = 120  # seconds — historical API returns large payloads
@@ -75,7 +69,9 @@ def fetch_data(city, lat, lon):
     Fetch ~10 years of hourly AQI + weather data for a single city.
     Returns a clean DataFrame with all NaN/null rows dropped.
     """
-    start = "2022-08-05"
+    # Use yesterday to ensure archive data is fully available
+    end = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    start = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
     end = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
     # --- 1. Air Quality (hourly) ---
@@ -108,8 +104,8 @@ def fetch_data(city, lat, lon):
         f"?latitude={lat}&longitude={lon}"
         f"&start_date={start}&end_date={end}"
         f"&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,surface_pressure,"
-        f"wind_speed_10m,wind_direction_10m,cloud_cover,weather_code,precipitation,"
-        f"shortwave_radiation,boundary_layer_height"
+        f"wind_speed_10m,wind_direction_10m,cloud_cover,weather_code,visibility,precipitation,"
+        f"shortwave_radiation,uv_index,boundary_layer_height"
         f"&daily=temperature_2m_mean,temperature_2m_max,temperature_2m_min"
         f"&timezone=GMT"
     )
@@ -168,10 +164,10 @@ def fetch_data(city, lat, lon):
         'aerosol_optical_depth': 'aerosol_optical_depth',
         'temperature_2m': 'temperature', 'temperature_2m_mean': 'temp_mean',
         'apparent_temperature': 'feels_like', 'relative_humidity_2m': 'humidity',
-        'surface_pressure': 'pressure',
+        'surface_pressure': 'pressure', 'visibility': 'visibility',
         'wind_speed_10m': 'wind_speed', 'wind_direction_10m': 'wind_deg', 'cloud_cover': 'clouds',
         'boundary_layer_height': 'boundary_layer_height', 'precipitation': 'precipitation',
-        'shortwave_radiation': 'solar_radiation',
+        'shortwave_radiation': 'solar_radiation', 'uv_index': 'uv_index',
         'weather_code': 'weather_condition'
     })
 
@@ -181,16 +177,18 @@ def fetch_data(city, lat, lon):
     # Select only the columns matching our DB schema
     final_cols = [
         'city', 'location', 'timestamp', 'aqi', 'pm25', 'pm10', 'o3', 'no2', 'so2', 'co', 'aerosol_optical_depth',
-        'temperature', 'temp_mean', 'temp_range', 'feels_like', 'humidity', 'pressure',
+        'temperature', 'temp_mean', 'temp_range', 'feels_like', 'humidity', 'pressure', 'visibility',
         'wind_speed', 'wind_deg', 'clouds', 'boundary_layer_height', 'precipitation', 'solar_radiation',
-        'weather_condition', 'is_weekend'
+        'uv_index', 'weather_condition', 'is_weekend'
     ]
     final_df = schema_mapped[final_cols].copy()
 
     # --- 4. Strict null/NaN filtering ---
     before_drop = len(final_df)
-    cols_to_check = [col for col in final_df.columns if col not in ['boundary_layer_height']]
-    final_df = final_df.dropna(subset=cols_to_check)
+    print("     Nulls per column:")
+    print(final_df.isnull().sum())
+    # Drop rows where ANY column has NaN/null (critical for ML target quality)
+    final_df = final_df.dropna()
     dropped = before_drop - len(final_df)
     print(f"     Dropped {dropped} rows with NaN/null values ({dropped/before_drop*100:.1f}%)")
 
@@ -202,11 +200,11 @@ def fetch_data(city, lat, lon):
     numerical_cols = final_df.select_dtypes(include=['float64']).columns
     final_df[numerical_cols] = final_df[numerical_cols].round(2)
 
-    # Final validation: ensure no NaN/null remain in core columns
-    remaining_nulls = final_df[cols_to_check].isnull().sum().sum()
+    # Final validation: ensure no NaN/null remain
+    remaining_nulls = final_df.isnull().sum().sum()
     if remaining_nulls > 0:
         print(f"  -> ERROR: {remaining_nulls} null values remain after dropna — this should not happen!")
-        final_df = final_df.dropna(subset=cols_to_check)
+        final_df = final_df.dropna()
 
     print(f"  -> Final clean rows: {len(final_df)}")
     return final_df
@@ -214,7 +212,7 @@ def fetch_data(city, lat, lon):
 
 if __name__ == '__main__':
     output_dir = 'artefacts'
-    file_path = os.path.join(output_dir, '10yr_hourly_timeline.csv')
+    file_path = os.path.join(output_dir, 'dry_run_timeline.csv')
 
     # Ensure output directory exists
     os.makedirs(output_dir, exist_ok=True)

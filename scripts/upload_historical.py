@@ -33,7 +33,8 @@ df = pd.read_csv(file_path)
 print(f"  Total rows loaded: {len(df)}")
 
 # ─── Data Preparation ───────────────────────────────────────
-df = df.dropna()
+cols_to_check = [col for col in df.columns if col not in ['boundary_layer_height']]
+df = df.dropna(subset=cols_to_check)
 # Ensure timestamp is ISO format
 df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True).dt.strftime('%Y-%m-%dT%H:%M:%S%z')
 

@@ -55,12 +55,12 @@ def fetch_live_data():
         lat, lon = coords
         
         # 1. Fetch Exact Open-Meteo Air Quality Model
-        url_aqi = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide"
+        url_aqi = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,aerosol_optical_depth"
         try:
             res_aqi = requests.get(url_aqi, timeout=30)
             
             # 2. Fetch Exact Open-Meteo Weather Model
-            url_w = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,surface_pressure,wind_speed_10m,wind_direction_10m,cloud_cover,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=GMT"
+            url_w = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,surface_pressure,wind_speed_10m,wind_direction_10m,cloud_cover,weather_code,precipitation,shortwave_radiation,boundary_layer_height&daily=temperature_2m_mean,temperature_2m_max,temperature_2m_min&timezone=GMT"
             res_w = requests.get(url_w, timeout=30)
 
             if res_aqi.status_code != 200 or res_w.status_code != 200:
@@ -78,9 +78,16 @@ def fetch_live_data():
             print(f"    [SKIP] {city}: Blank JSON payload natively")
             continue
             
+        temp_min = daily_w.get('temperature_2m_min', [None])[0] if daily_w.get('temperature_2m_min') else None
+        temp_max = daily_w.get('temperature_2m_max', [None])[0] if daily_w.get('temperature_2m_max') else None
+        temp_range = (temp_max - temp_min) if temp_max is not None and temp_min is not None else None
+
+        dt_obj = datetime.fromisoformat(cur_aqi.get('time')) if cur_aqi.get('time') else datetime.now(timezone.utc)
+
         record = {
             'city': city,
-            'timestamp': cur_aqi.get('time') + "+00:00",
+            'location': f"SRID=4326;POINT({lon} {lat})",
+            'timestamp': cur_aqi.get('time') + "+00:00" if cur_aqi.get('time') else None,
             'aqi': cur_aqi.get('us_aqi'),
             'pm25': cur_aqi.get('pm2_5'),
             'pm10': cur_aqi.get('pm10'),
@@ -88,16 +95,21 @@ def fetch_live_data():
             'no2': cur_aqi.get('nitrogen_dioxide'),
             'so2': cur_aqi.get('sulphur_dioxide'),
             'co': cur_aqi.get('carbon_monoxide'),
+            'aerosol_optical_depth': cur_aqi.get('aerosol_optical_depth'),
             'temperature': cur_w.get('temperature_2m'),
-            'temp_min': daily_w.get('temperature_2m_min', [None])[0] if daily_w.get('temperature_2m_min') else None,
-            'temp_max': daily_w.get('temperature_2m_max', [None])[0] if daily_w.get('temperature_2m_max') else None,
+            'temp_mean': daily_w.get('temperature_2m_mean', [None])[0] if daily_w.get('temperature_2m_mean') else None,
+            'temp_range': temp_range,
             'feels_like': cur_w.get('apparent_temperature'),
             'humidity': cur_w.get('relative_humidity_2m'),
             'pressure': cur_w.get('surface_pressure'),
             'wind_speed': cur_w.get('wind_speed_10m'),
             'wind_deg': cur_w.get('wind_direction_10m'),
             'clouds': cur_w.get('cloud_cover'),
-            'weather_condition': map_weather_code(cur_w.get('weather_code'))
+            'boundary_layer_height': cur_w.get('boundary_layer_height'),
+            'precipitation': cur_w.get('precipitation'),
+            'solar_radiation': cur_w.get('shortwave_radiation'),
+            'weather_condition': map_weather_code(cur_w.get('weather_code')),
+            'is_weekend': dt_obj.weekday() >= 5
         }
         
         records.append(record)
@@ -105,7 +117,8 @@ def fetch_live_data():
 
     df = pd.DataFrame(records)
     if df.empty: return pd.DataFrame()
-    df = df.dropna()
+    cols_to_check = [c for c in df.columns if c not in ['boundary_layer_height']]
+    df = df.dropna(subset=cols_to_check)
     df = df.where(pd.notnull(df), None)
     
     return df
