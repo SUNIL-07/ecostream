@@ -38,8 +38,9 @@ df = df.dropna(subset=cols_to_check)
 # Ensure timestamp is ISO format
 df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True).dt.strftime('%Y-%m-%dT%H:%M:%S%z')
 
-# Convert NaN to None (null) for JSON
-df = df.where(pd.notnull(df), None)
+# Convert NaN to None (null) for JSON safely
+import numpy as np
+df = df.replace({np.nan: None})
 
 records = df.to_dict(orient='records')
 

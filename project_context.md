@@ -6,57 +6,149 @@
 **Objective:** Build an automated cloud-based data ingestion pipeline, train ML models for predicting a 24-hour window of Air Quality Index (AQI), explain predictions with XAI (SHAP), and visualize everything in an interactive Streamlit dashboard. Focused on 20 major cities across India.
 
 **Tech Stack:**
-- **Data APIs:** Open-Meteo Unified Suite (Air Quality + Weather/ERA5 Native Forecasts)
-- **Database:** Supabase (Cloud PostgreSQL)
-- **Ingestion:** GitHub Actions (Running Python scripts hourly)
-- **Data processing & EDA:** pandas, numpy, sqlalchemy, plotly, seaborn
+- **Data APIs:** Open-Meteo Unified Suite (Air Quality API + Weather Archive/ERA5)
+- **Database:** Supabase (Cloud PostgreSQL with PostGIS extension)
+- **Ingestion:** GitHub Actions (Python scripts running hourly)
+- **Data processing & EDA:** pandas, numpy, pyarrow, plotly, seaborn
 - **ML & XAI:** scikit-learn, xgboost, lightgbm, shap (TreeSHAP)
 - **UI & Deployment:** Streamlit, Streamlit Community Cloud
 
 ---
 
-## 2. Progress So Far
-- **Project Initiation:** Finalized project scope and problem statement.
-- **Goal Setting:** Defined S.M.A.R.T objectives and a structured Phased Methodology.
-- **Architecture Finalization:** Clarified technical infrastructure choices (Supabase for DB, GitHub Actions for orchestration, Open-Meteo for deeply unified 1:1 API mappings).
-- **Documentation:** Created the core `Project_Document.md` detailing the objectives, stack, and modeling strategy.
-- **Phase A Complete:** Successfully built and deployed an 18-attribute Super-Schema via a Python auto-ingestion pipeline securely to GitHub Actions!
+## 2. Current Phase: Phase C (Predictive Modeling & XAI)
+
+- [ ] Train baseline XGBoost and LightGBM models on rtefacts/train_data.parquet
+- [ ] Evaluate using MAE, RMSE, and R-squared on rtefacts/test_data.parquet
+- [ ] Run TreeSHAP on the champion model to generate SHAP waterfall and summary plots
+- [ ] Save serialized champion model for Streamlit deployment
+- [ ] Connect Jupyter Notebooks to Supabase for live EDA & correlation analysis
 
 ---
 
-## 3. Current Phase To-Dos: Phase C (Exploration & Predictive Modeling)
-*We now dive into extracting raw patterns systematically to build our core ML engine metrics.*
+## 3. Completed Phases
 
-- [ ] Connect Jupyter Notebooks to Supabase arrays and perform robust EDA natively.
-- [ ] Check correlation matrices specifically looking at PM2.5/AQI dependencies against Meteorological features natively.
-- [ ] Construct the ML modeling pipeline framework securely (XGBoost vs LightGBM architecture comparisons).
-- [ ] Execute TreeSHAP internally to calculate robust Explainable AI intelligence rules. 
-- [ ] Save the champion pipeline securely as serialization arrays for Streamlit cloud!
+### Phase A: Engineering Foundation (COMPLETE)
+- [x] Designed and deployed the daily_aqi_weather table schema in Supabase PostgreSQL.
+  - Used PostGIS GEOGRAPHY(POINT, 4326) for spatial coordinates.
+  - Schema tracks 22 variables covering air quality, meteorology, and derived features.
+- [x] Built ingestion/fetch_data.py: hourly real-time ingestion for 20 cities.
+  - Fetches from Open-Meteo Air Quality API and Forecast API simultaneously.
+  - Uses Supabase REST API with on_conflict=city,timestamp UPSERT to prevent duplicates.
+  - Configured GitHub Actions (hourly_ingestion.yml) to trigger on cron: 0 * * * *.
+- [x] Pushed all code to github.com/SUNIL-07/ecostream (main branch).
+
+**Key scripts:** ingestion/fetch_data.py, .github/workflows/hourly_ingestion.yml
 
 ---
 
-## 4. Completed Phases
-### Phase B (Empirical Analytics & Deep Extraction)
-- [x] Extracted a 10-year pure-hourly historical framework natively fetching exactly 1.5M absolute timelines dynamically bypassing daily averaging structures.
-- [x] Re-architected dual-API endpoint strings explicitly connecting simultaneous Daily parameters mathematically broadcasting limits back into exact Hourly constraints identically matching live Webhooks!
-- [x] Cleanly processed and successfully uploaded over **616,056 strictly-filtered arrays** securely mapping pure sensors into Supabase completely dropping faulty timelines!
+### Phase B: Historical Data Engineering (COMPLETE)
+The full history pipeline is now complete. Key decisions and resolutions documented below.
 
-#### Technical Resolutions & Code Changes (Phase B)
-During Phase B Data Engineering, massive structural optimizations completely scaled the architecture natively:
-- **Pure Hourly Granularity Shift:** The initial extraction models mathematically utilized `.groupby('date')` aggregating metrics cleanly but losing prediction depth. **Resolution:** Dismantled Pandas aggregations comprehensively stringing Open-Meteo models directly to `timestamp` boundaries uniquely boosting schema scale organically from exactly 27,000 dates seamlessly into 1.5 Million nested hourly combinations directly!
-- **Dynamic Dual-API Mapping:** Conventional ERA5 hourly sets entirely miss internal `temp_min` and `temp_max` limitations generating database crashes natively. **Resolution:** Hooked exact URL parameters commanding APIs cleanly output both `Daily` limits natively and mapped them structurally onto all 24 parallel `Hourly` integers resolving structural mismatches seamlessly cleanly avoiding secondary API expenses!
-- **Strict ML Target Quality Filtering:** Older matrices mathematically returned zero AQI metrics triggering corrupt machine learning baselines natively. **Resolution:** Configured pure structural barriers natively hardcoding `df = df.dropna(subset=['aqi'])` universally purging 64% of obsolete disconnected limits before database integrations natively cleanly stabilizing targets.
-- **Extreme Pipeline Array Chunking:** Hooking exactly 616,000 arrays linearly across Postgres API arrays causes internal memory timeout exceptions safely natively. **Resolution:** Vastly upscaled explicit SQLAlchemy upload limitations natively jumping `chunk_size` from 2,000 integers to 10,000 limits dynamically securely tracking 500,000 lines cleanly effectively reducing cloud-load entirely within a strict 3-minute window natively!
-- **Infinite Target Bridges:** Earlier execution scripts hardcoded strict end-dates statically paralyzing infinite collection frameworks safely natively. **Resolution:** Reprogrammed timeline models structurally integrating `datetime.now()` natively permanently closing boundaries directly bridging exactly into `fetch_data.py` live GitHub webhooks securely without gaps!
+#### B.1 Open-Meteo Archive Availability Analysis
+Ran a 10-year availability diagnostic across all 23 planned variables. Results:
 
+| Variable Group | Availability Start | Notes |
+|---|---|---|
+| Core weather (temp, humidity, pressure, wind, etc.) | 2016-01-01 | 100% available across all years |
+| Air Quality (AQI, PM2.5, PM10, O3, NO2, SO2, CO, AOD) | 2022-08-04 | Archive did not exist before this date |
+| isibility | Never | 100% missing in historical archive |
+| uv_index | Never | 100% missing in historical archive |
+| oundary_layer_height | 2016 (with gaps) | Missing ~4.8% of rows; all of 2024 missing |
 
-### Phase A (Engineering)
-- [x] Set up Supabase PostgreSQL project and database schema.
-- [x] Streamlined the Python extraction framework internally stringing 100% of live logic specifically to Open-Meteo Cloud matching pure structural historical identical parity natively securely!
-- [x] Establish strict `dropna` validation barriers natively completely shielding Supabase arrays from Null API blocks seamlessly!
-- [x] Configured optimized GitHub Actions workflows securely stringing purely standalone Python bridges successfully across Supabase.
+**Resolution:** 
+- Set historical start date to 2022-08-05 (earliest AQI archive date).
+- Removed isibility and uv_index from schema (ALTER TABLE ... DROP COLUMN).
+- Excluded oundary_layer_height from dropna() filter (kept as nullable column).
+
+#### B.2 Per-City Record Availability (2022-08-05 to 2026-05-12)
+All 20 cities yield exactly **33,048 valid hourly records** each = **660,960 total** (with 87,360 rows having NULL oundary_layer_height).
+
+#### B.3 Historical Fetch Pipeline
+**Script:** scripts/fetch_historical_hourly.py
+- Fetches from both Open-Meteo Archive (weather) and Air Quality APIs per city.
+- Merges hourly weather with daily 	emp_mean, 	emp_max, 	emp_min broadcast to hourly rows.
+- Derives: 	emp_range = temp_max - temp_min, is_weekend, PostGIS EWKT location string.
+- Applies dropna() on all columns except oundary_layer_height.
+- Rate-limited: 60-second pause between cities to respect Open-Meteo fair-use policy.
+- Saves to rtefacts/10yr_hourly_timeline.csv.
+
+**Output:** 826,200 rows (660,960 valid + 165,240 Ahmedabad partial re-fetch rows)
+
+#### B.4 Historical Upload
+**Script:** scripts/upload_historical.py
+- Reads the CSV and applies the same oundary_layer_height-aware dropna().
+- Converts NaN to None via df.replace({np.nan: None}) for valid JSON serialization.
+- Uploads in 1,000-row chunks to Supabase REST API with UPSERT.
+- **Result:** 824,200 rows successfully uploaded to Supabase.
+
+#### B.5 Live Ingestion Sync
+ingestion/fetch_data.py updated to match historical schema exactly:
+- Added: erosol_optical_depth, 	emp_mean, 	emp_range, precipitation, solar_radiation, oundary_layer_height, is_weekend, PostGIS location.
+- Removed: isibility, uv_index, 	emp_min, 	emp_max.
+- Same oundary_layer_height-aware dropna() logic applied.
+
+**Key scripts:** scripts/fetch_historical_hourly.py, scripts/upload_historical.py, ingestion/fetch_data.py, schema.sql
+
+---
+
+### Phase B-ML: Feature Engineering & Preprocessing (COMPLETE)
+**Script:** scripts/ml_preprocess.py
+
+#### Input
+- Source: rtefacts/10yr_hourly_timeline.csv (826,200 rows, 25 columns)
+- Date range: 2022-08-05 to 2026-05-12
+
+#### Columns Dropped
+| Column | Reason |
+|---|---|
+| oundary_layer_height | 100% missing in historical archive |
+| isibility | 100% missing (already removed from schema) |
+| uv_index | 100% missing (already removed from schema) |
+| location (EWKT string) | Replaced by numeric latitude and longitude |
+| wind_deg | Replaced by wind_u and wind_v vector components |
+| city (string) | Replaced by city_encoded (mean AQI target encoding) |
+| 	imestamp | Dropped after extracting all temporal features |
+| hour, month | Replaced by sine/cosine cyclical transforms |
+
+#### Features Engineered (52 total)
+| Category | Details |
+|---|---|
+| Spatial | Lat/Lon parsed from PostGIS EWKT string using regex |
+| Temporal | hour_sin, hour_cos, month_sin, month_cos, day_of_week, is_weekend |
+| Wind vectors | wind_u = wind_speed x cos(rad), wind_v = wind_speed x sin(rad) |
+| Weather | One-hot: wx_Clear, wx_Clouds, wx_Rain |
+| City encoding | Mean AQI per city (range: Thiruvananthapuram=66.5 to New Delhi=166.3) |
+| Lag features | aqi, pm25, pm10 at t-1h, t-3h, t-6h, t-24h (12 features) |
+| Rolling stats | aqi, pm25, pm10 rolling mean 3h/24h and std 6h (9 features) |
+
+#### Filters Applied
+- dropna() after lag creation removed 480 rows (24h warm-up window) = 0.06% loss
+- Clean rows retained: **825,720**
+
+#### Output (Chronological Walk-Forward Split, 80/20 per city)
+| File | Rows |
+|---|---|
+| rtefacts/train_data.parquet | 660,570 |
+| rtefacts/test_data.parquet | 165,150 |
+
+---
+
+## 4. Key Code Files
+
+| File | Purpose | Status |
+|---|---|---|
+| schema.sql | Supabase table definition | Complete |
+| ingestion/fetch_data.py | Hourly real-time ingestion (GitHub Actions) | Complete |
+| .github/workflows/hourly_ingestion.yml | Cron trigger every hour | Complete |
+| scripts/fetch_historical_hourly.py | 3.5-year historical batch fetch | Complete |
+| scripts/upload_historical.py | Upload CSV to Supabase via REST | Complete |
+| scripts/ml_preprocess.py | Feature engineering + train/test split | Complete |
+| rtefacts/train_data.parquet | 660,570 rows, 52 features | Ready |
+| rtefacts/test_data.parquet | 165,150 rows, 52 features | Ready |
 
 ---
 
 ## 5. Future Phases
-- **Phase D: Deployment & UI Analytics** - Construct and compile a dynamic Streamlit frontend securely interfacing against Supabase databases natively!
+
+- **Phase C:** Train XGBoost / LightGBM. Evaluate MAE, R2. Run TreeSHAP.
+- **Phase D:** Streamlit dashboard connected to Supabase + serialized model.

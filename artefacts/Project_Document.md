@@ -61,3 +61,138 @@ We will train the top 3 best-suited models that integrate well with Explainable 
 *   **Phase B: Empirical Analytics (EDA):** Extract multidimensional data directly from Supabase to local Jupyter Notebooks. Analyze lag features, correlation matrices, and time-of-day impacts.
 *   **Phase C: Predictive Intelligence & XAI:** Build feature pipelines. Train XGBoost, LightGBM, and RF. Evaluate models using MAE and RMSE. Apply SHAP to the champion model to extract plain-text or visual explanations.
 *   **Phase D: Deployment & Communication:** Develop a Streamlit application connected directly to Supabase and the serialized Champion model. Publish via Streamlit Cloud for public access.
+
+---
+
+## 6. Phase B: Feature Engineering & Preprocessing Report
+
+*Script:* scripts/ml_preprocess.py | *Completed:* 2026-05-15
+
+### 6.1 Data Source
+
+| Property | Value |
+|---|---|
+| Source file | rtefacts/10yr_hourly_timeline.csv |
+| Raw rows loaded | 826,200 |
+| Raw columns | 25 |
+| Date range | 2022-08-05 to 2026-05-12 |
+| Cities | 20 Indian cities |
+| Granularity | Hourly |
+
+### 6.2 Column Drops & Filters Applied
+
+| Column | Action | Reason |
+|---|---|---|
+| oundary_layer_height | Dropped | 100% missing in Open-Meteo historical archive |
+| isibility | Dropped (schema-level) | 100% missing in Open-Meteo historical archive |
+| uv_index | Dropped (schema-level) | 100% missing in Open-Meteo historical archive |
+| location (EWKT string) | Replaced | Parsed into numeric latitude and longitude columns |
+| wind_deg | Replaced | Decomposed into wind_u and wind_v vector components |
+| city (string) | Replaced | Target-encoded into city_encoded (mean AQI per city) |
+| 	imestamp | Dropped post-engineering | All temporal info extracted into derived features |
+| hour, month | Dropped | Replaced by cyclical sine/cosine transforms |
+
+### 6.3 Feature Engineering Steps
+
+#### A. Spatial: Lat/Lon Extraction
+- Input: PostGIS EWKT string SRID=4326;POINT(lon lat) in location column.
+- Output: Two new numeric columns longitude and latitude.
+- Method: Regex parse on the POINT(...) pattern.
+
+#### B. Temporal Features: Cyclical Transforms
+
+| Feature | Formula | Captures |
+|---|---|---|
+| hour_sin | sin(2pi x hour/24) | Daily cycle continuity |
+| hour_cos | cos(2pi x hour/24) | Daily cycle continuity |
+| month_sin | sin(2pi x month/12) | Seasonal cycle continuity |
+| month_cos | cos(2pi x month/12) | Seasonal cycle continuity |
+| day_of_week | timestamp.dayofweek (0=Mon) | Weekly traffic patterns |
+| is_weekend | Pre-existing, cast to int | Industrial/traffic proxy |
+
+#### C. Wind Vector Decomposition
+- wind_u = wind_speed x cos(wind_rad) (East-West component)
+- wind_v = wind_speed x sin(wind_rad) (North-South component)
+
+#### D. Weather Condition One-Hot Encoding
+weather_condition encoded into: wx_Clear, wx_Clouds, wx_Rain
+
+#### E. City Target Encoding (Mean AQI)
+
+| City | Encoded Value |
+|---|---|
+| New Delhi | 166.3 |
+| Ludhiana | 143.7 |
+| Kanpur | 137.7 |
+| Patna | 136.4 |
+| Lucknow | 132.7 |
+| Kolkata | 125.9 |
+| Chandigarh | 116.5 |
+| Mumbai | 116.4 |
+| Surat | 110.4 |
+| Jaipur | 105.9 |
+| Nagpur | 104.8 |
+| Visakhapatnam | 104.4 |
+| Ahmedabad | 89.8 |
+| Indore | 89.3 |
+| Hyderabad | 88.3 |
+| Pune | 87.0 |
+| Bhopal | 86.2 |
+| Chennai | 75.1 |
+| Bengaluru | 70.6 |
+| Thiruvananthapuram | 66.5 |
+
+#### F. Lag Features (Autocorrelation Memory)
+Calculated per city group, chronologically sorted to prevent cross-city contamination.
+
+| Variable | Lags Created |
+|---|---|
+| qi | aqi_lag_1h, aqi_lag_3h, aqi_lag_6h, aqi_lag_24h |
+| pm25 | pm25_lag_1h, pm25_lag_3h, pm25_lag_6h, pm25_lag_24h |
+| pm10 | pm10_lag_1h, pm10_lag_3h, pm10_lag_6h, pm10_lag_24h |
+
+#### G. Rolling Statistics (Trend & Volatility)
+Computed using shift(1) before the rolling window to prevent look-ahead leakage.
+
+| Feature | Window | Purpose |
+|---|---|---|
+| *_roll_mean_3h | 3h | Short-term trend smoothing |
+| *_roll_mean_24h | 24h | Diurnal baseline reference |
+| *_roll_std_6h | 6h | Volatility / spike detection |
+
+Applied to: qi, pm25, pm10 (9 features total)
+
+### 6.4 NaN Filtering After Engineering
+
+| Stage | Rows |
+|---|---|
+| After lag/rolling creation | 826,200 |
+| Dropped (24h lag warm-up, 0.06%) | 480 |
+| Clean rows retained | 825,720 |
+
+### 6.5 Final Feature Set: 52 Features + 1 Target
+
+| Category | Features | Count |
+|---|---|---|
+| Raw Pollutants | pm25, pm10, o3, no2, so2, co, aerosol_optical_depth | 7 |
+| Meteorological | temperature, temp_mean, temp_range, feels_like, humidity, pressure, wind_speed, wind_u, wind_v, precipitation, solar_radiation, clouds | 12 |
+| Temporal | hour_sin, hour_cos, month_sin, month_cos, day_of_week, is_weekend | 6 |
+| Spatial | latitude, longitude, city_encoded | 3 |
+| Lag Features | 3 variables x 4 horizons (1h, 3h, 6h, 24h) | 12 |
+| Rolling Stats | 3 variables x 3 statistics (mean 3h, mean 24h, std 6h) | 9 |
+| Weather One-Hot | wx_Clear, wx_Clouds, wx_Rain | 3 |
+| **Total** | | **52** |
+
+**Target variable:** qi
+
+### 6.6 Chronological Train/Test Split
+
+Split performed per city group using walk-forward validation. No random shuffle — strictly 80% earliest data for training and 20% latest for testing, per city.
+
+| Split | Rows | Output File |
+|---|---|---|
+| Training | 660,570 | rtefacts/train_data.parquet |
+| Test | 165,150 | rtefacts/test_data.parquet |
+| Total | 825,720 | |
+
+**Note:** Chronological split is mandatory for time-series data. Random splits cause temporal leakage where the model sees future data during training, producing artificially inflated metrics that do not reflect real-world performance.
