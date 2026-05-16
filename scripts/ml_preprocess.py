@@ -23,6 +23,9 @@ import time
 import requests
 import numpy as np
 import pandas as pd
+import joblib
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
 
 try:
     from dotenv import load_dotenv
@@ -42,6 +45,9 @@ FALLBACK_CSV        = os.path.join("artefacts", "10yr_hourly_timeline.csv")
 
 TRAIN_OUT   = os.path.join("artefacts", "train_data.parquet")
 TEST_OUT    = os.path.join("artefacts", "test_data.parquet")
+SCALER_OUT  = os.path.join("artefacts", "scaler.joblib")
+IMPUTER_OUT = os.path.join("artefacts", "imputer.joblib")
+FEATURES_OUT = os.path.join("artefacts", "features.joblib")
 
 TRAIN_RATIO = 0.80
 TARGET_COL  = "aqi"
@@ -51,6 +57,16 @@ LAG_HOURS         = [1, 3, 6, 24]
 ROLL_COLS         = ["aqi", "pm25", "pm10"]
 ROLL_MEAN_WINDOWS = [3, 24]
 ROLL_STD_WINDOWS  = [6]
+
+CITIES = {
+    "New Delhi": (28.6139, 77.2090), "Kolkata": (22.5726, 88.3639), "Mumbai": (19.0760, 72.8777),
+    "Bengaluru": (12.9716, 77.5946), "Chennai": (13.0827, 80.2707), "Hyderabad": (17.3850, 78.4867),
+    "Ahmedabad": (23.0225, 72.5714), "Surat": (21.1702, 72.8311), "Pune": (18.5204, 73.8567),
+    "Lucknow": (26.8467, 80.9462), "Kanpur": (26.4499, 80.3319), "Jaipur": (26.9124, 75.7873),
+    "Indore": (22.7196, 75.8577), "Patna": (25.5941, 85.1376), "Nagpur": (21.1458, 79.0882),
+    "Thiruvananthapuram": (8.5241, 76.9366), "Bhopal": (23.2599, 77.4126), "Chandigarh": (30.7333, 76.7794),
+    "Ludhiana": (30.9010, 75.8573), "Visakhapatnam": (17.6868, 83.2185)
+}
 
 PAGE_SIZE = 1000   # Supabase REST API max rows per request
 
@@ -147,32 +163,51 @@ if df is None or df.empty:
     print(f"  Loaded {len(df):,} rows from local CSV (fallback).")
 else:
     print(f"  Pulled {len(df):,} rows x {len(df.columns)} columns from Supabase.")
+    if not df.empty:
+        print(f"  Sample Record Keys: {list(df.iloc[0].keys())}")
+        print(f"  Sample location value: {df['location'].iloc[0]}")
+    
+    print("  Raw Data Null Check:")
 
 # Drop boundary_layer_height — entirely null in historical archive
 df.drop(columns=["boundary_layer_height"], errors="ignore", inplace=True)
 print(f"  Dropped 'boundary_layer_height' column (null in archive).")
 
-# ─── Step 2: Parse Timestamp & Sort ────────────────────────────────────────────
-print("\nSTEP 2 — Parsing Timestamps & Sorting")
+# ─── Step 2: Parsing Timestamps (Convert UTC to IST) ──────────────────────────
+print("\nSTEP 2 — Parsing Timestamps & Converting to IST")
 df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-df = df.sort_values(["city", "timestamp"]).reset_index(drop=True)
-print(f"  Date range: {df['timestamp'].min()} -> {df['timestamp'].max()}")
+df["timestamp"] = df["timestamp"].dt.tz_convert("Asia/Kolkata")
+df = df.sort_values(["city", "timestamp"])
+print(f"  Date range (IST): {df['timestamp'].min()} -> {df['timestamp'].max()}")
 
-# ─── Step 3: Extract Lat/Lon from PostGIS EWKT ─────────────────────────────────
-print("\nSTEP 3 — Extracting Latitude & Longitude from Location String")
-# Format: "SRID=4326;POINT(lon lat)"
-def parse_ewkt(ewkt_str):
-    try:
-        coords = re.search(r"POINT\(([^ ]+) ([^ )]+)\)", str(ewkt_str))
-        return float(coords.group(1)), float(coords.group(2))  # lon, lat
-    except Exception:
-        return np.nan, np.nan
+# ─── Step 3: Extracting Latitude & Longitude from Location ────────────────────
+print("\nSTEP 3 — Extracting Latitude & Longitude (with City Mapping Fallback)")
 
-df[["longitude", "latitude"]] = pd.DataFrame(
-    df["location"].apply(parse_ewkt).tolist(), index=df.index
-)
-df.drop(columns=["location"], inplace=True)
-print(f"  Extracted lat/lon for {df['latitude'].notnull().sum():,} rows.")
+def parse_location(row):
+    loc = row.get("location")
+    city = row.get("city")
+    
+    # 1. Try to parse from GEOGRAPHY object (dict or str)
+    lat, lon = None, None
+    if isinstance(loc, dict): # GeoJSON
+        coords = loc.get("coordinates", [None, None])
+        lon, lat = coords[0], coords[1]
+    elif isinstance(loc, str): # EWKT
+        match = re.search(r"POINT\(([-\d\.]+)\s+([-\d\.]+)\)", loc)
+        if match:
+            lon, lat = float(match.group(1)), float(match.group(2))
+    
+    # 2. Fallback to CITIES dictionary if parsing failed or loc was NULL
+    if (lat is None or lon is None) and city in CITIES:
+        lat, lon = CITIES[city]
+        
+    return lat, lon
+
+coords = df.apply(parse_location, axis=1)
+df["latitude"] = [c[0] for c in coords]
+df["longitude"] = [c[1] for c in coords]
+df.drop(columns=["location"], inplace=True, errors="ignore")
+print(f"  Extracted/Mapped lat/lon for {len(df):,} rows.")
 
 # ─── Step 4: Temporal Feature Engineering ─────────────────────────────────────
 print("\nSTEP 4 — Temporal Feature Engineering")
@@ -251,13 +286,12 @@ for col in ROLL_COLS:
 
 # ─── Step 10: Drop Nulls (from lag creation initial window) ───────────────────
 print("\nSTEP 10 — Dropping NaN rows from lag/rolling warm-up window")
-before = len(df)
+print("  Nulls found per column:")
 null_counts = df.isnull().sum()
-if null_counts.any():
-    print("  Nulls found per column:")
-    for col, count in null_counts[null_counts > 0].items():
-        print(f"    {col:<25} : {count:,} ({count/len(df)*100:.1f}%)")
+for col, count in null_counts[null_counts > 0].items():
+    print(f"    {col:<25} : {count:,} ({count/len(df)*100:.1f}%)")
 
+before = len(df)
 df = df.dropna()
 after = len(df)
 print(f"  Dropped {before - after:,} rows ({(before-after)/before*100:.1f}% of total).")
@@ -266,7 +300,7 @@ print(f"  Clean rows remaining: {after:,}")
 # ─── Step 11: Drop Timestamp (no longer needed as a raw feature) ──────────────
 df = df.drop(columns=["timestamp"])
 
-# ─── Step 12: Chronological Train/Test Split (per city) ───────────────────────
+# ─── Step 11: Chronological Train/Test Split (per city) ───────────────────────
 print("\nSTEP 11 — Chronological Train/Test Split (80% / 20% per city)")
 
 train_chunks = []
@@ -279,19 +313,35 @@ for (city_enc, lat, lon), group in df.groupby(
     split_idx = int(len(group) * TRAIN_RATIO)
     train_chunks.append(group.iloc[:split_idx])
     test_chunks.append(group.iloc[split_idx:])
-    print(
-        f"  city_enc={city_enc:.1f} | lat={lat} | "
-        f"train={split_idx:,} | test={len(group)-split_idx:,}"
-    )
 
 train_df = pd.concat(train_chunks).reset_index(drop=True)
 test_df  = pd.concat(test_chunks).reset_index(drop=True)
 
-print(f"\n  TRAIN: {len(train_df):,} rows × {len(train_df.columns)} features")
+# ─── Step 12: Imputation & Scaling ───────────────────────────────────────────
+print("\nSTEP 12 — Imputation & Scaling (StandardScaler)")
+feature_cols = [c for c in train_df.columns if c != TARGET_COL]
+
+# Impute missing values (if any survived) using Median
+imputer = SimpleImputer(strategy="median")
+train_df[feature_cols] = imputer.fit_transform(train_df[feature_cols])
+test_df[feature_cols]  = imputer.transform(test_df[feature_cols])
+
+# Scale features to mean=0, std=1
+scaler = StandardScaler()
+train_df[feature_cols] = scaler.fit_transform(train_df[feature_cols])
+test_df[feature_cols]  = scaler.transform(test_df[feature_cols])
+
+# Save transformer objects for inference
+joblib.dump(imputer, IMPUTER_OUT)
+joblib.dump(scaler, SCALER_OUT)
+joblib.dump(feature_cols, FEATURES_OUT)
+print(f"  Saved imputer, scaler, and features to 'artefacts/'")
+
+print(f"  TRAIN: {len(train_df):,} rows × {len(train_df.columns)} features")
 print(f"  TEST : {len(test_df):,}  rows × {len(test_df.columns)} features")
 
 # ─── Step 13: Save as Parquet ─────────────────────────────────────────────────
-print("\nSTEP 12 — Saving Parquet Files")
+print("\nSTEP 13 — Saving Parquet Files (Overwriting)")
 train_df.to_parquet(TRAIN_OUT, index=False, engine="pyarrow")
 test_df.to_parquet(TEST_OUT,  index=False, engine="pyarrow")
 print(f"  Saved -> {TRAIN_OUT}")
@@ -301,11 +351,10 @@ print(f"  Saved -> {TEST_OUT}")
 print("\n" + "=" * 65)
 print("PREPROCESSING COMPLETE")
 print("=" * 65)
-feature_cols = [c for c in train_df.columns if c != TARGET_COL]
 print(f"  Total features : {len(feature_cols)}")
 print(f"  Target         : {TARGET_COL}")
 print(f"  Train rows     : {len(train_df):,}")
 print(f"  Test rows      : {len(test_df):,}")
-print(f"\n  Full feature list:")
+print(f"\n  Full feature list (Scaled):")
 for i, f in enumerate(sorted(feature_cols), 1):
     print(f"    {i:>3}. {f}")

@@ -196,3 +196,28 @@ Split performed per city group using walk-forward validation. No random shuffle 
 | Total | 825,720 | |
 
 **Note:** Chronological split is mandatory for time-series data. Random splits cause temporal leakage where the model sees future data during training, producing artificially inflated metrics that do not reflect real-world performance.
+
+---
+
+## 7. Phase C: Predictive Intelligence & XAI Report
+
+*Completed:* 2026-05-16
+
+### 7.1 Model Performance (Champion: LightGBM)
+
+| Metric | Value |
+|---|---|
+| R-Squared (R2) | 0.9982 |
+| Mean Absolute Error (MAE) | 1.0691 |
+| Test Samples | 165,150 |
+| Features | 52 |
+
+### 7.2 SHAP Explainability Insights
+
+- **Primary Driver:** qi_lag_1h accounts for over 90% of the prediction weight, confirming high temporal persistence.
+- **Environmental Impact:** pm25_roll_mean_24h and pm10_roll_mean_24h act as the secondary anchors for baseline pollution levels.
+- **Dispersal Factors:** Wind speed and precipitation show clear negative SHAP values during high-pollution events, effectively lowering the predicted AQI.
+
+### 7.3 Alert System Simulation
+- **Logic:** If predicted_aqi > 150 or delta_3h > 50.
+- **Reasoning:** Automated extraction of top 3 SHAP contributors (e.g., 'NO2 increased AQI by +20 due to traffic').
