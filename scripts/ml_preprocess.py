@@ -19,41 +19,138 @@ Target: aqi
 import os
 import sys
 import re
+import time
+import requests
 import numpy as np
 import pandas as pd
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    load_dotenv('../.env')
+except Exception:
+    pass
 
 sys.stdout.reconfigure(line_buffering=True)
 
 # ─── Configuration ─────────────────────────────────────────────────────────────
-INPUT_CSV   = os.path.join("artefacts", "10yr_hourly_timeline.csv")
+SUPABASE_URL        = "https://trfetbxovhmbmwgbqdqm.supabase.co"
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or \
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRyZmV0YnhvdmhtYm13Z2JxZHFtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NjM1NjY3MCwiZXhwIjoyMDkxOTMyNjcwfQ.XgrP4c5hniQJbSK87xpEru820e24K9gLebA2bBt-Gb8"
+TABLE_NAME          = "daily_aqi_weather"
+FALLBACK_CSV        = os.path.join("artefacts", "10yr_hourly_timeline.csv")
+
 TRAIN_OUT   = os.path.join("artefacts", "train_data.parquet")
 TEST_OUT    = os.path.join("artefacts", "test_data.parquet")
 
-TRAIN_RATIO = 0.80   # 80% train / 20% test, chronological per city
+TRAIN_RATIO = 0.80
 TARGET_COL  = "aqi"
 
-LAG_COLS    = ["aqi", "pm25", "pm10"]
-LAG_HOURS   = [1, 3, 6, 24]
+LAG_COLS          = ["aqi", "pm25", "pm10"]
+LAG_HOURS         = [1, 3, 6, 24]
+ROLL_COLS         = ["aqi", "pm25", "pm10"]
+ROLL_MEAN_WINDOWS = [3, 24]
+ROLL_STD_WINDOWS  = [6]
 
-ROLL_COLS   = ["aqi", "pm25", "pm10"]
-ROLL_MEAN_WINDOWS = [3, 24]   # hours
-ROLL_STD_WINDOWS  = [6]       # hours
+PAGE_SIZE = 1000   # Supabase REST API max rows per request
+
+
+def fetch_from_supabase():
+    """
+    Pulls all rows from daily_aqi_weather via paginated Supabase REST API.
+    Returns a DataFrame, or None on failure.
+    """
+    headers = {
+        "apikey":        SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+        "Content-Type":  "application/json",
+    }
+
+    base_url = (
+        f"{SUPABASE_URL}/rest/v1/{TABLE_NAME}"
+        f"?select=city,location,timestamp,aqi,pm25,pm10,o3,no2,so2,co,"
+        f"aerosol_optical_depth,temperature,temp_mean,temp_range,feels_like,"
+        f"humidity,pressure,wind_speed,wind_deg,clouds,precipitation,"
+        f"solar_radiation,weather_condition,is_weekend"
+        f"&order=city,timestamp"
+    )
+
+    # --- Get total row count first ---
+    total = None
+    try:
+        probe_headers = headers.copy()
+        probe_headers["Prefer"] = "count=exact"
+        probe = requests.head(base_url, headers=probe_headers, timeout=30)
+        content_range = probe.headers.get("content-range", "")
+        total = int(content_range.split("/")[-1]) if "/" in content_range else None
+        if total:
+            print(f"  Supabase reports {total:,} total rows.")
+    except Exception:
+        pass
+
+    # --- Paginated fetch ---
+    all_frames = []
+    offset = 0
+    page   = 1
+
+    while True:
+        url = f"{base_url}&limit={PAGE_SIZE}&offset={offset}"
+        for attempt in range(1, 4):
+            try:
+                resp = requests.get(url, headers=headers, timeout=60)
+                if resp.status_code in [200, 206]:
+                    break
+                print(f"  [WARN] HTTP {resp.status_code} on page {page}, attempt {attempt}")
+            except Exception as e:
+                print(f"  [WARN] Network error on page {page}, attempt {attempt}: {e}")
+            time.sleep(3 * attempt)
+        else:
+            print(f"  [ERROR] Failed to fetch page {page} after 3 attempts.")
+            return None
+
+        batch = resp.json()
+        if not batch:
+            break
+
+        all_frames.append(pd.DataFrame(batch))
+        fetched = offset + len(batch)
+        pct     = f"{fetched/total*100:.1f}%" if total else "?"
+        print(f"  Page {page:>4} | rows {offset:>7} - {fetched:>7} | {pct}", end="\r")
+
+        if len(batch) < PAGE_SIZE:
+            break
+
+        offset += PAGE_SIZE
+        page   += 1
+        time.sleep(0.1)   # polite pacing
+
+    print()  # newline after progress line
+    if not all_frames:
+        return None
+
+    return pd.concat(all_frames, ignore_index=True)
+
 
 # ─── Step 1: Load & Initial Clean ──────────────────────────────────────────────
 print("=" * 65)
-print("STEP 1 — Loading Data")
+print("STEP 1 — Loading Data from Supabase")
 print("=" * 65)
 
-if not os.path.exists(INPUT_CSV):
-    print(f"[ERROR] Input file not found: {INPUT_CSV}")
-    sys.exit(1)
+df = fetch_from_supabase()
 
-df = pd.read_csv(INPUT_CSV, low_memory=False)
-print(f"  Loaded {len(df):,} rows × {len(df.columns)} columns")
+if df is None or df.empty:
+    print("  [WARN] Supabase pull failed or returned empty. Falling back to local CSV.")
+    if not os.path.exists(FALLBACK_CSV):
+        print(f"  [ERROR] Fallback CSV also not found: {FALLBACK_CSV}")
+        sys.exit(1)
+    df = pd.read_csv(FALLBACK_CSV, low_memory=False)
+    print(f"  Loaded {len(df):,} rows from local CSV (fallback).")
+else:
+    print(f"  Pulled {len(df):,} rows x {len(df.columns)} columns from Supabase.")
 
 # Drop boundary_layer_height — entirely null in historical archive
 df.drop(columns=["boundary_layer_height"], errors="ignore", inplace=True)
-print(f"  Dropped 'boundary_layer_height' (100% missing in archive).")
+print(f"  Dropped 'boundary_layer_height' column (null in archive).")
 
 # ─── Step 2: Parse Timestamp & Sort ────────────────────────────────────────────
 print("\nSTEP 2 — Parsing Timestamps & Sorting")
@@ -122,9 +219,7 @@ for city, val in sorted(city_target_map.items(), key=lambda x: -x[1]):
 
 # ─── Step 8: Lag Features ─────────────────────────────────────────────────────
 print("\nSTEP 8 — Lag Features (per city group)")
-df = df.groupby(["city_encoded", "latitude", "longitude"], group_keys=False).apply(
-    lambda g: g.sort_values("timestamp")
-)
+df = df.sort_values(["city_encoded", "latitude", "longitude", "timestamp"]).reset_index(drop=True)
 
 for col in LAG_COLS:
     for lag in LAG_HOURS:
@@ -157,6 +252,12 @@ for col in ROLL_COLS:
 # ─── Step 10: Drop Nulls (from lag creation initial window) ───────────────────
 print("\nSTEP 10 — Dropping NaN rows from lag/rolling warm-up window")
 before = len(df)
+null_counts = df.isnull().sum()
+if null_counts.any():
+    print("  Nulls found per column:")
+    for col, count in null_counts[null_counts > 0].items():
+        print(f"    {col:<25} : {count:,} ({count/len(df)*100:.1f}%)")
+
 df = df.dropna()
 after = len(df)
 print(f"  Dropped {before - after:,} rows ({(before-after)/before*100:.1f}% of total).")
