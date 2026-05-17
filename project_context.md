@@ -15,13 +15,8 @@
 
 ---
 
-## 2. Current Phase: Phase C (Predictive Modeling & XAI)
-
-- [ ] Train baseline XGBoost and LightGBM models on `artefacts/train_data.parquet`
-- [ ] Evaluate using MAE, RMSE, and R-squared on `artefacts/test_data.parquet`
-- [ ] Run TreeSHAP on the champion model to generate SHAP waterfall and summary plots
-- [ ] Save serialized champion model for Streamlit deployment
-- [ ] Connect Jupyter Notebooks to Supabase for live EDA & correlation analysis
+## 2. Current Phase: Complete (Entering Maintenance Mode)
+The initial development of EcoStream (Phases A through D) is now 100% complete. The system is operating autonomously, fetching live data hourly, and retraining the ML model weekly.
 
 ---
 
@@ -136,7 +131,27 @@ All 20 cities yield exactly **33,048 valid hourly records** each = **660,960 tot
 
 ---
 
-## 5. Future Phases
+## 5. Phase C: Predictive Modeling & XAI (COMPLETE)
 
-- **Phase C:** Train XGBoost / LightGBM. Evaluate MAE, R2. Run TreeSHAP.
-- **Phase D:** Streamlit dashboard connected to Supabase + serialized model.
+- **Champion Model:** LightGBM Regressor (R² = ~0.998, MAE = ~0.94). Outperformed XGBoost in both training time and predictive accuracy on the 52-feature matrix.
+- **Explainability (XAI):** Integrated `shap.TreeExplainer`. The dashboard uses this to generate live "Waterfall Plots" explaining exactly which meteorological or lagged features are pushing the AQI away from the baseline.
+- **Model Artifacts:** `champion_model.joblib`, `scaler.joblib`, `imputer.joblib`, and `features.joblib` are saved and continuously overwritten by the retraining pipeline.
+
+---
+
+## 6. Phase D: Deployment & Continual Learning (COMPLETE)
+
+### 6.1 Streamlit Dashboard (`app.py`)
+- **Live Trends:** Fetches the last 72 hours of data directly from Supabase to plot dynamic historical trends.
+- **XAI Integration:** Displays real-time SHAP analysis for the "Next Hour Forecast", detailing precisely which factors (e.g., `wind_speed`, `pm25_lag_1h`) are driving the pollution.
+- **National Overview:** A live Mapbox visualization plotting the AQI across the 20 Indian cities.
+- **7-Day Future Forecast:** Fetches 168 hours of future weather/AQI forecast from Open-Meteo on-demand. Passes this through `preprocess_live` to recursively build the lag features, allowing the LightGBM model to predict a highly accurate 1-week AQI trendline with exact IST dates and times.
+
+### 6.2 Continual Learning Pipeline (`ml_retrain.py`)
+- **Script:** `scripts/ml_retrain.py` acts as a monolithic MLOps pipeline. It triggers `ml_preprocess.py` to refresh data from Supabase, runs `RandomizedSearchCV` on LightGBM for hyperparameter tuning, and saves the new model.
+- **Automation:** Configured `.github/workflows/model_retrain.yml` to trigger every Sunday at midnight (`cron: 0 0 * * 0`). It automatically pushes the updated `joblib` artifacts back to the `main` branch, allowing the Streamlit Cloud deployment to hot-reload the newly tuned model with zero downtime.
+
+---
+
+## 7. Future Scope (Phase E)
+- Ensembling with live CPCB (Central Pollution Control Board) ground-sensor data to build a meta-learner comparing satellite (Open-Meteo) vs. Ground (CPCB) readings.
