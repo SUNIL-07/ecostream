@@ -14,6 +14,7 @@ import json
 import shap
 import plotly.express as px
 import plotly.graph_objects as go
+import matplotlib.pyplot as plt
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
@@ -63,6 +64,60 @@ def fetch_latest_records(city=None, limit=48):
         return pd.DataFrame(resp.json())
     return pd.DataFrame()
 
+@st.cache_data(ttl=3600)
+def fetch_future_forecast(city):
+    lat, lon = CITIES[city]
+    url_aqi = f'https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,aerosol_optical_depth&past_days=1&forecast_days=7&timezone=Asia%2FKolkata'
+    url_w = f'https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,cloud_cover,weather_code,precipitation,shortwave_radiation,boundary_layer_height&daily=temperature_2m_mean,temperature_2m_max,temperature_2m_min&past_days=1&forecast_days=7&timezone=Asia%2FKolkata'
+    
+    try:
+        res_aqi = requests.get(url_aqi).json()
+        res_w = requests.get(url_w).json()
+        
+        df_aqi = pd.DataFrame(res_aqi['hourly'])
+        df_w = pd.DataFrame(res_w['hourly'])
+        df_w_daily = pd.DataFrame(res_w['daily'])
+        
+        df_aqi['time'] = pd.to_datetime(df_aqi['time']).dt.tz_localize('Asia/Kolkata')
+        df_w['time'] = pd.to_datetime(df_w['time']).dt.tz_localize('Asia/Kolkata')
+        df_w_daily['time'] = pd.to_datetime(df_w_daily['time']).dt.tz_localize('Asia/Kolkata')
+        
+        df_w_daily['date'] = df_w_daily['time'].dt.date
+        df_w['date'] = df_w['time'].dt.date
+        
+        df = pd.merge(df_aqi, df_w, on='time')
+        df = pd.merge(df, df_w_daily[['date', 'temperature_2m_mean', 'temperature_2m_max', 'temperature_2m_min']], on='date')
+        
+        df['temp_range'] = df['temperature_2m_max'] - df['temperature_2m_min']
+        
+        def map_weather_code(code):
+            if pd.isna(code): return 'Unknown'
+            code = int(code)
+            if code == 0: return 'Clear'
+            elif 1 <= code <= 3: return 'Clouds'
+            elif 45 <= code <= 48: return 'Haze'
+            elif 51 <= code <= 67: return 'Rain'
+            elif 71 <= code <= 77: return 'Snow'
+            elif code >= 80: return 'Rain'
+            return 'Unknown'
+        
+        df.rename(columns={
+            'time': 'timestamp', 'us_aqi': 'aqi', 'pm2_5': 'pm25', 'ozone': 'o3',
+            'nitrogen_dioxide': 'no2', 'sulphur_dioxide': 'so2', 'carbon_monoxide': 'co',
+            'temperature_2m': 'temperature', 'temperature_2m_mean': 'temp_mean',
+            'apparent_temperature': 'feels_like', 'relative_humidity_2m': 'humidity',
+            'surface_pressure': 'pressure', 'wind_speed_10m': 'wind_speed',
+            'wind_direction_10m': 'wind_deg', 'cloud_cover': 'clouds',
+            'shortwave_radiation': 'solar_radiation', 'weather_code': 'weather_condition'
+        }, inplace=True)
+        df['weather_condition'] = df['weather_condition'].apply(map_weather_code)
+        df['city'] = city
+        return df
+    except Exception as e:
+        print(f"Error fetching forecast: {e}")
+        return pd.DataFrame()
+
+
 def get_aqi_category(aqi):
     if aqi <= 50: return "Good", "#00e400"
     if aqi <= 100: return "Satisfactory", "#92d050"
@@ -71,11 +126,20 @@ def get_aqi_category(aqi):
     if aqi <= 400: return "Very Poor", "#ff0000"
     return "Severe", "#7e0023"
 
-def preprocess_live(df):
+def preprocess_live(df, return_all_future=False):
     """Applies the same feature engineering as the training script."""
     df = df.copy()
-    df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True).dt.tz_convert("Asia/Kolkata")
+    
+    # Ensure timestamp is datetime before accessing .dt accessor
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    
+    if df['timestamp'].dt.tz is None:
+        # If naive (from open-meteo), assume it's already localized to IST due to timezone=Asia%2FKolkata
+        df['timestamp'] = df['timestamp'].dt.tz_localize('Asia/Kolkata')
+    else:
+        df['timestamp'] = df['timestamp'].dt.tz_convert("Asia/Kolkata")
     df = df.sort_values('timestamp')
+
     
     # 1. Lat/Lon
     lat, lon = CITIES[df['city'].iloc[0]]
@@ -112,6 +176,11 @@ def preprocess_live(df):
         df[f'{col}_roll_mean_3h'] = df[col].shift(1).rolling(3).mean()
         df[f'{col}_roll_mean_24h'] = df[col].shift(1).rolling(24).mean()
         df[f'{col}_roll_std_6h'] = df[col].shift(1).rolling(6).std()
+    
+    if return_all_future:
+        # Return all rows that are in the future
+        now_ist = pd.Timestamp.utcnow().tz_convert("Asia/Kolkata")
+        return df[df['timestamp'] >= now_ist].dropna(subset=[f'aqi_lag_{l}h' for l in [1,3,6,24]])
     
     return df.iloc[-1:] # Return only the most recent row for prediction
 
@@ -177,7 +246,7 @@ if not city_data.empty and model_loaded:
         st.metric("Humidity", f"{latest['humidity']}%")
 
     # Main Layout
-    tab1, tab2, tab3 = st.tabs(["📈 Trends", "🧠 Why this Prediction? (XAI)", "🗺️ National Overview"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📈 Trends", "🧠 Why this Prediction? (XAI)", "🗺️ National Overview", "🔮 7-Day Forecast"])
     
     with tab1:
         st.subheader(f"72-Hour AQI Trend: {selected_city}")
@@ -225,6 +294,35 @@ if not city_data.empty and model_loaded:
             st.map(map_df, latitude='lat', longitude='lon', size='aqi', color='#ff0000')
             st.dataframe(map_df[['city', 'aqi', 'weather_condition', 'timestamp']].sort_values('aqi', ascending=False), use_container_width=True)
 
+    with tab4:
+        st.subheader("🔮 7-Day Future Forecast")
+        st.markdown("Machine Learning predictions mapped exactly onto Open-Meteo's 168-hour weather forecast.")
+        
+        with st.spinner("Generating 7-day future predictions..."):
+            future_raw = fetch_future_forecast(selected_city)
+            if not future_raw.empty:
+                future_processed = preprocess_live(future_raw, return_all_future=True)
+                
+                if not future_processed.empty:
+                    input_matrix = future_processed[features]
+                    try:
+                        preds = model.predict(scaler.transform(imputer.transform(input_matrix)))
+                        future_processed['predicted_aqi'] = preds
+                        
+                        fig_future = px.line(future_processed, x='timestamp', y='predicted_aqi', 
+                                            title=f"7-Day Predicted AQI Trend: {selected_city}")
+                        fig_future.add_hline(y=150, line_dash="dash", line_color="orange", annotation_text="Moderate Limit")
+                        fig_future.add_hline(y=300, line_dash="dash", line_color="red", annotation_text="Poor Limit")
+                        st.plotly_chart(fig_future, use_container_width=True)
+                        
+                        st.dataframe(future_processed[['timestamp', 'predicted_aqi', 'temperature', 'weather_condition']]
+                                     .sort_values('timestamp').reset_index(drop=True), use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Prediction failed: {e}")
+                else:
+                    st.warning("Not enough past data to compute lags for the forecast.")
+            else:
+                st.error("Failed to fetch forecast from Open-Meteo.")
 else:
     st.info("Select a city to begin or ensure the database has data for this region.")
 
